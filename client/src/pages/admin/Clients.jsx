@@ -1,0 +1,652 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import {
+  Building2,
+  Plus,
+  Mail,
+  Phone,
+  Eye,
+  User,
+  Briefcase,
+  CalendarDays,
+  List,
+  Users,
+  CalendarCheck2,
+  PhoneCall,
+  Clock,
+  Sparkles,
+} from 'lucide-react';
+import api from '../../services/api';
+import { PageHeader } from '../../components/layout/PageHeader';
+import { DataTable } from '../../components/tables/DataTable';
+import { MeetingCalendar } from '../../components/calendar/MeetingCalendar';
+import { Button } from '../../components/common/Button';
+import { Badge } from '../../components/common/Badge';
+import { Modal } from '../../components/common/Modal';
+import { useAuthStore } from '../../store/authStore';
+
+export const Clients = () => {
+  const { user } = useAuthStore();
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
+  const [clients, setClients] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarMeta, setCalendarMeta] = useState({ totalClients: 0, daysWithOnboarding: 0 });
+  const [employees, setEmployees] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Filters
+  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'active' | 'scheduled_calls' | 'archived'
+
+  // Date drill-down modal for calendar
+  const [selectedCalendarItem, setSelectedCalendarItem] = useState(null);
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false);
+
+  const navigate = useNavigate();
+  const isEmployee = user?.role === 'employee';
+
+  // New Client Form State
+  const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [accountManager, setAccountManager] = useState('');
+  const [nextFollowUpDate, setNextFollowUpDate] = useState('');
+  const [followUpReason, setFollowUpReason] = useState('Client requested call-back after 1 month');
+
+  const fetchClients = async () => {
+    try {
+      setIsLoading(true);
+      const params = { limit: 100 };
+      if (filterTab === 'active') params.status = 'active';
+      if (filterTab === 'archived') params.status = 'archived';
+      if (filterTab === 'scheduled_calls') params.hasFollowUp = 'true';
+
+      const res = await api.get('/clients', { params });
+      setClients(res.data.data);
+    } catch (err) {
+      toast.error('Failed to load clients');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchCalendarData = async () => {
+    try {
+      const res = await api.get('/clients/calendar');
+      setCalendarEvents(res.data.data || []);
+      setCalendarMeta(res.data.meta || { totalClients: 0, daysWithOnboarding: 0 });
+    } catch (err) {
+      toast.error('Failed to load client calendar records');
+    }
+  };
+
+  const fetchEmployees = async () => {
+    try {
+      const res = await api.get('/employees?limit=100');
+      setEmployees(res.data.data);
+    } catch (err) {}
+  };
+
+  useEffect(() => {
+    fetchClients();
+  }, [filterTab]);
+
+  useEffect(() => {
+    fetchCalendarData();
+    fetchEmployees();
+  }, []);
+
+  // Quick 1-Month Call button from table
+  const handleQuick1MonthSchedule = async (clientId, clientName) => {
+    try {
+      const d = new Date();
+      d.setDate(d.getDate() + 30);
+      const dateStr = d.toISOString().split('T')[0];
+
+      await api.post(`/clients/${clientId}/schedule-call`, {
+        followUpDate: dateStr,
+        reason: 'Client requested call-back after 1 month',
+        title: `1-Month Follow-Up with ${clientName}`,
+      });
+
+      toast.success(`1-Month call scheduled for ${clientName}!`);
+      fetchClients();
+      fetchCalendarData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to schedule call');
+    }
+  };
+
+  const handleCreateClient = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/clients', {
+        name,
+        companyName,
+        email,
+        phoneNumber,
+        accountManager: isEmployee ? (user?.employee?._id || user?.employee) : (accountManager || null),
+        nextFollowUpDate: nextFollowUpDate || null,
+        followUpReason: nextFollowUpDate ? followUpReason : '',
+      });
+      toast.success('Client profile created successfully');
+      setIsModalOpen(false);
+      setName('');
+      setCompanyName('');
+      setEmail('');
+      setPhoneNumber('');
+      setNextFollowUpDate('');
+      setFollowUpReason('Client requested call-back after 1 month');
+      fetchClients();
+      fetchCalendarData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create client');
+    }
+  };
+
+  const handleEventClick = (event) => {
+    const props = event.extendedProps;
+    setSelectedCalendarItem({
+      type: props.type || 'onboarding',
+      date: props.date,
+      count: props.count || 1,
+      clients: props.clients || (props.client ? [props.client] : []),
+      title: event.title,
+    });
+    setIsDateModalOpen(true);
+  };
+
+  const handleDateSelect = (selectInfo) => {
+    const dateStr = selectInfo.startStr;
+    const existing = calendarEvents.filter((e) => e.start === dateStr);
+    if (existing.length > 0) {
+      const first = existing[0];
+      setSelectedCalendarItem({
+        type: first.extendedProps.type || 'onboarding',
+        date: dateStr,
+        count: first.extendedProps.count || existing.length,
+        clients: first.extendedProps.clients || existing.map((e) => e.extendedProps.client).filter(Boolean),
+        title: first.title,
+      });
+    } else {
+      setSelectedCalendarItem({
+        type: 'onboarding',
+        date: dateStr,
+        count: 0,
+        clients: [],
+      });
+    }
+    setIsDateModalOpen(true);
+  };
+
+  const getCallCountdown = (targetDate) => {
+    if (!targetDate) return null;
+    const diffMs = new Date(targetDate).getTime() - new Date().getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return { text: `${Math.abs(diffDays)}d overdue`, isOverdue: true };
+    if (diffDays === 0) return { text: 'Today', isToday: true };
+    if (diffDays === 1) return { text: 'Tomorrow', isUpcoming: true };
+    return { text: `In ${diffDays}d`, isUpcoming: true };
+  };
+
+  const columns = [
+    {
+      header: 'Client / Company',
+      accessorKey: 'name',
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <span
+            onClick={() => navigate(`/clients/${row.original._id}`)}
+            className="font-bold text-slate-800 dark:text-white hover:text-blue-600 cursor-pointer block truncate text-xs md:text-sm"
+          >
+            {row.original.name}
+          </span>
+          {row.original.companyName && (
+            <span className="text-xs text-slate-500 truncate block">
+              {row.original.companyName}
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: 'Email & Phone',
+      accessorKey: 'email',
+      cell: ({ row }) => (
+        <div className="space-y-0.5 text-xs">
+          <span className="text-slate-600 dark:text-slate-300 font-medium block truncate max-w-[180px]">
+            {row.original.email}
+          </span>
+          {row.original.phoneNumber && (
+            <span className="text-slate-400 text-[11px] block">{row.original.phoneNumber}</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: 'Account Manager',
+      accessorKey: 'accountManager.fullName',
+      cell: ({ row }) => (
+        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+          {row.original.accountManager?.fullName || '— (Direct)'}
+        </span>
+      ),
+    },
+    {
+      header: 'Next Call-Back',
+      accessorKey: 'nextFollowUpDate',
+      cell: ({ row }) => {
+        const c = row.original;
+        if (!c.nextFollowUpDate) {
+          return (
+            <button
+              onClick={() => handleQuick1MonthSchedule(c._id, c.name)}
+              className="px-2 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 rounded-lg transition flex items-center gap-1"
+              title="Schedule a 1-month call-back"
+            >
+              <PhoneCall size={11} /> + 1 Mo Call
+            </button>
+          );
+        }
+
+        const cd = getCallCountdown(c.nextFollowUpDate);
+        return (
+          <div className="space-y-0.5">
+            <span
+              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                cd?.isOverdue
+                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300'
+              }`}
+            >
+              <PhoneCall size={10} /> {cd?.text}
+            </span>
+            <span className="text-[10px] text-slate-400 block truncate max-w-[130px]">
+              {new Date(c.nextFollowUpDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      cell: ({ row }) => <Badge status={row.original.status} />,
+    },
+    {
+      header: 'Actions',
+      id: 'actions',
+      cell: ({ row }) => (
+        <Button
+          variant="outline"
+          size="sm"
+          icon={Eye}
+          onClick={() => navigate(`/clients/${row.original._id}`)}
+          className="text-xs py-1 px-2.5"
+        >
+          Details
+        </Button>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Client Accounts"
+        subtitle="Manage customer profiles, employee assignments, and future call-back schedules"
+        actions={
+          <div className="flex items-center gap-3">
+            {/* View Mode Toggle: List / Calendar */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  viewMode === 'list'
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                }`}
+              >
+                <List size={16} /> List View
+              </button>
+              <button
+                onClick={() => setViewMode('calendar')}
+                className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  viewMode === 'calendar'
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                }`}
+              >
+                <CalendarDays size={16} /> Calendar View
+              </button>
+            </div>
+
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Plus}
+              onClick={() => {
+                if (isEmployee) {
+                  setAccountManager(user?.employee?._id || user?.employee || '');
+                }
+                setIsModalOpen(true);
+              }}
+            >
+              Add Client
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Filter Tabs */}
+      {viewMode === 'list' && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {[
+            { key: 'all', label: 'All Clients' },
+            { key: 'active', label: 'Active Accounts' },
+            { key: 'scheduled_calls', label: '📞 Call-Back Scheduled' },
+            { key: 'archived', label: 'Archived' },
+          ].map((tab) => {
+            const isActive = filterTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setFilterTab(tab.key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                  isActive
+                    ? tab.key === 'scheduled_calls'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {viewMode === 'list' ? (
+        <DataTable
+          columns={columns}
+          data={clients}
+          isLoading={isLoading}
+          searchPlaceholder="Search clients by name, company, email, phone..."
+        />
+      ) : (
+        <div className="space-y-5">
+          {/* Calendar Top KPI Summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
+                <Users size={22} />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Total Clients</p>
+                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
+                  {calendarMeta.totalClients || clients.length}
+                </h4>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                <CalendarCheck2 size={22} />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Onboarding Events</p>
+                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
+                  {calendarMeta.daysWithOnboarding || 0}
+                </h4>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl">
+                <PhoneCall size={22} />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Scheduled Call-Backs</p>
+                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
+                  {calendarMeta.scheduledCalls || 0}
+                </h4>
+              </div>
+            </div>
+          </div>
+
+          {/* FullCalendar Component */}
+          <MeetingCalendar
+            events={calendarEvents}
+            onEventClick={handleEventClick}
+            onDateSelect={handleDateSelect}
+          />
+        </div>
+      )}
+
+      {/* Date Drill-Down Modal */}
+      <Modal
+        isOpen={isDateModalOpen}
+        onClose={() => setIsDateModalOpen(false)}
+        title={
+          selectedCalendarItem?.date
+            ? `Client Events — ${new Date(selectedCalendarItem.date + 'T00:00:00').toLocaleDateString([], {
+                weekday: 'short',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })}`
+            : 'Client Details'
+        }
+        subtitle={
+          selectedCalendarItem?.type === 'follow_up_call'
+            ? 'Scheduled Client Follow-up Call'
+            : `${selectedCalendarItem?.count || 0} client(s) on this date`
+        }
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-4">
+          {(!selectedCalendarItem || selectedCalendarItem.clients.length === 0) ? (
+            <div className="py-8 text-center text-xs text-slate-400">
+              No clients or scheduled calls found on this date.
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {selectedCalendarItem.clients.map((c) => (
+                <div
+                  key={c._id}
+                  className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-blue-400 transition"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">
+                        {c.name}
+                      </span>
+                      <Badge status={c.status} />
+                      {c.followUpReason && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
+                          📞 Call: {c.followUpReason}
+                        </span>
+                      )}
+                    </div>
+
+                    {c.companyName && (
+                      <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                        {c.companyName}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-1">
+                      <span className="flex items-center gap-1">
+                        <Mail size={12} /> {c.email}
+                      </span>
+                      {c.phoneNumber && (
+                        <span className="flex items-center gap-1">
+                          <Phone size={12} /> {c.phoneNumber}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                        <User size={12} /> Manager: {c.accountManager}
+                      </span>
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={Eye}
+                    onClick={() => {
+                      setIsDateModalOpen(false);
+                      navigate(`/clients/${c._id}`);
+                    }}
+                    className="shrink-0 text-xs py-1.5"
+                  >
+                    View Account
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
+            <Button variant="outline" size="sm" onClick={() => setIsDateModalOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add Client Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title="Create Client Account"
+        subtitle="Add a direct client or enterprise customer"
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleCreateClient} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Contact Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Mark Robinson"
+              className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Company Name
+            </label>
+            <input
+              type="text"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              placeholder="e.g. Apex FinTech Solutions"
+              className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Email Address *
+            </label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="contact@company.com"
+              className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Phone Number
+            </label>
+            <input
+              type="text"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="+1 555 000 0000"
+              className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+            />
+          </div>
+
+          {!isEmployee && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Assign Account Manager
+              </label>
+              <select
+                value={accountManager}
+                onChange={(e) => setAccountManager(e.target.value)}
+                className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+              >
+                <option value="">None (Executive Managed)</option>
+                {employees.map((emp) => (
+                  <option key={emp._id} value={emp._id}>
+                    {emp.fullName} ({emp.department})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Quick Initial Call-Back Option */}
+          <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1">
+                <Clock size={13} /> Scheduled Future Call-Back
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + 30);
+                  setNextFollowUpDate(d.toISOString().split('T')[0]);
+                }}
+                className="text-[11px] font-bold text-blue-600 hover:underline"
+              >
+                +1 Month
+              </button>
+            </div>
+            <input
+              type="date"
+              value={nextFollowUpDate}
+              min={new Date().toISOString().split('T')[0]}
+              onChange={(e) => setNextFollowUpDate(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-700 rounded-lg dark:text-white"
+            />
+            {nextFollowUpDate && (
+              <input
+                type="text"
+                value={followUpReason}
+                onChange={(e) => setFollowUpReason(e.target.value)}
+                placeholder="Reason (e.g. Client requested call after 1 month)"
+                className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-700 rounded-lg dark:text-white"
+              />
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <Button variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm">
+              Create Client
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+};
