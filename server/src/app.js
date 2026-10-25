@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import { env } from './config/env.js';
+import { connectDB } from './config/db.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -64,6 +65,20 @@ export const createApp = () => {
   if (env.nodeEnv !== 'test') {
     app.use(morgan('dev'));
   }
+
+  // Auto-connect database before processing any request (essential for serverless/Vercel)
+  app.use(async (req, res, next) => {
+    try {
+      await connectDB();
+      next();
+    } catch (err) {
+      console.error('❌ Database connection failure:', err.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Database connection failed: ' + err.message,
+      });
+    }
+  });
 
   // Rate Limiting on /api
   app.use('/api', apiLimiter);

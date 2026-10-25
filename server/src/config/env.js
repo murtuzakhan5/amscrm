@@ -12,10 +12,12 @@ export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
-  mongodbUri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/ams_crafters_crm',
+  mongodbUri:
+    process.env.MONGODB_URI ||
+    'mongodb+srv://murtuzakhanedu:Murtuzakhan8248@cluster0.xr3uvl7.mongodb.net/ams-software?retryWrites=true&w=majority',
   useInMemoryDb: process.env.USE_IN_MEMORY_DB === 'true',
-  jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'ams_crafters_access_secret_key_dev',
-  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'ams_crafters_refresh_secret_key_dev',
+  jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'ams_crafters_access_token_secret_key_super_secure_2026_dev',
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'ams_crafters_refresh_token_secret_key_super_secure_2026_dev',
   jwtAccessExpiry: process.env.JWT_ACCESS_EXPIRY || '15m',
   jwtRefreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
   initialAdminName: process.env.INITIAL_ADMIN_NAME || 'AMS Super Admin',
