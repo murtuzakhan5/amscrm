@@ -69,29 +69,36 @@ export const createApp = () => {
   app.use('/api', apiLimiter);
 
   // Health check
-  app.get('/api/health', (req, res) => {
+  const healthCheck = (req, res) => {
     res.status(200).json({
       status: 'healthy',
       app: 'AMS Crafters CRM API',
       timestamp: new Date().toISOString(),
       timezone: env.defaultTimezone,
     });
-  });
+  };
+  app.get('/api/health', healthCheck);
+  app.get('/health', healthCheck);
 
-  // API Endpoints
-  app.use('/api/auth', authRoutes);
-  app.use('/api/employees', employeeRoutes);
-  app.use('/api/leads', leadRoutes);
-  app.use('/api/meetings', meetingRoutes);
-  app.use('/api/tasks', taskRoutes);
-  app.use('/api/clients', clientRoutes);
-  app.use('/api/projects', projectRoutes);
-  app.use('/api/deals', dealRoutes);
-  app.use('/api/attendance', attendanceRoutes);
-  app.use('/api/notifications', notificationRoutes);
-  app.use('/api/reports', reportRoutes);
-  app.use('/api/settings', settingRoutes);
-  app.use('/api/audit-logs', auditRoutes);
+  // API Endpoints - mounted on both /api and root for proxy & rewrite flexibility
+  const mountAPIRoutes = (prefix = '') => {
+    app.use(`${prefix}/auth`, authRoutes);
+    app.use(`${prefix}/employees`, employeeRoutes);
+    app.use(`${prefix}/leads`, leadRoutes);
+    app.use(`${prefix}/meetings`, meetingRoutes);
+    app.use(`${prefix}/tasks`, taskRoutes);
+    app.use(`${prefix}/clients`, clientRoutes);
+    app.use(`${prefix}/projects`, projectRoutes);
+    app.use(`${prefix}/deals`, dealRoutes);
+    app.use(`${prefix}/attendance`, attendanceRoutes);
+    app.use(`${prefix}/notifications`, notificationRoutes);
+    app.use(`${prefix}/reports`, reportRoutes);
+    app.use(`${prefix}/settings`, settingRoutes);
+    app.use(`${prefix}/audit-logs`, auditRoutes);
+  };
+
+  mountAPIRoutes('/api');
+  mountAPIRoutes('');
 
   // Centralized Error Handling
   app.use(errorHandler);
