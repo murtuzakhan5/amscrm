@@ -38,17 +38,8 @@ export const createApp = () => {
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (
-          origin === env.clientUrl ||
-          origin === 'http://localhost:5173' ||
-          origin === 'http://127.0.0.1:5173' ||
-          origin.endsWith('.vercel.app') ||
-          env.nodeEnv !== 'production'
-        ) {
-          return callback(null, true);
-        }
-        return callback(new Error(`CORS blocked for origin: ${origin}`));
+        // Echo incoming origin to allow custom domains (e.g. https://crm.amscrafters.com) and localhost
+        return callback(null, true);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
