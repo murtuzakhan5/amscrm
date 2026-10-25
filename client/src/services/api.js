@@ -53,10 +53,6 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshErr) {
         processQueue(refreshErr, null);
-        // Force redirect to login if session fully expired
-        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-          window.location.href = '/login?expired=1';
-        }
         return Promise.reject(refreshErr);
       } finally {
         isRefreshing = false;
