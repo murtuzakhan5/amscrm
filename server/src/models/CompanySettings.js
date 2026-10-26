@@ -29,7 +29,7 @@ const companySettingsSchema = new Schema(
     },
     lateGracePeriodMinutes: {
       type: Number,
-      default: 15,
+      default: 5,
     },
     timezone: {
       type: String,
@@ -44,6 +44,9 @@ const companySettingsSchema = new Schema(
       default: [
         'Executive & Management',
         'Sales & Business Development',
+        'Graphic Designing & Creative Media',
+        'Video Editing & Content Creation',
+        'Team Leads & Management',
         'Custom Software Engineering',
         'Web & Mobile Development',
         'UI/UX Design',

@@ -11,8 +11,8 @@ const router = Router();
 
 router.use(authenticate);
 
-// Admin dashboard aggregations
-router.get('/dashboard', authorizeRoles('admin'), getDashboardStats);
+// Admin & Manager dashboard aggregations
+router.get('/dashboard', authorizeRoles('admin', 'manager'), getDashboardStats);
 
 // Manager dashboard
 router.get('/manager-dashboard', authorizeRoles('admin', 'manager'), getManagerDashboardStats);

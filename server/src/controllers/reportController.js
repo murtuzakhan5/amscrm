@@ -32,6 +32,7 @@ export const getDashboardStats = async (req, res, next) => {
       leadsByMonth,
       leadsBySource,
       employeePerformance,
+      todayAttendanceRecords,
     ] = await Promise.all([
       Employee.countDocuments({ isDeleted: false }),
       Employee.countDocuments({ employmentStatus: 'active', isDeleted: false }),
@@ -111,6 +112,10 @@ export const getDashboardStats = async (req, res, next) => {
         },
         { $limit: 10 },
       ]),
+      // Today Attendance Records
+      Attendance.find({
+        date: `${todayStart.getFullYear()}-${String(todayStart.getMonth() + 1).padStart(2, '0')}-${String(todayStart.getDate()).padStart(2, '0')}`,
+      }),
     ]);
 
     // Map lead counts into an accessible object
@@ -144,21 +149,25 @@ export const getDashboardStats = async (req, res, next) => {
 
     const conversionRate = totalLeads > 0 ? ((statusMap.won / totalLeads) * 100).toFixed(1) : 0;
 
-    // Populate employee details for top performance chart
-    const populatedPerformance = await Employee.populate(employeePerformance, {
-      path: '_id',
-      select: 'fullName designation department',
-    });
+    // Safely look up employee details for top performance chart
+    const empIds = employeePerformance.map((p) => p._id).filter(Boolean);
+    const employees = await Employee.find({ _id: { $in: empIds } })
+      .select('fullName designation department')
+      .lean();
+    const empMap = new Map(employees.map((e) => [String(e._id), e]));
 
-    const performanceFormatted = populatedPerformance
-      .filter((p) => p._id)
-      .map((p) => ({
-        employeeName: p._id.fullName,
-        department: p._id.department,
-        assignedLeads: p.assignedCount,
-        wonLeads: p.wonCount,
-        conversionRate: p.assignedCount > 0 ? Math.round((p.wonCount / p.assignedCount) * 100) : 0,
-      }));
+    const performanceFormatted = employeePerformance
+      .map((p) => {
+        const emp = empMap.get(String(p._id));
+        return {
+          employeeName: emp?.fullName || 'Assigned Agent',
+          department: emp?.department || 'General',
+          assignedLeads: p.assignedCount || 0,
+          wonLeads: p.wonCount || 0,
+          conversionRate: p.assignedCount > 0 ? Math.round((p.wonCount / p.assignedCount) * 100) : 0,
+        };
+      })
+      .filter((p) => p.assignedLeads > 0);
 
     // Format Monthly Lead Growth for Recharts
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -190,11 +199,24 @@ export const getDashboardStats = async (req, res, next) => {
       actualRevenueReceived: 0,
     };
 
+    const todayPresent = todayAttendanceRecords.filter((a) => a.status === 'present').length;
+    const todayLate = todayAttendanceRecords.filter((a) => a.status === 'late').length;
+    const todayHalfDay = todayAttendanceRecords.filter((a) => a.status === 'half_day').length;
+    const totalCheckedIn = todayAttendanceRecords.length;
+    const todayAbsent = Math.max(0, activeEmployees - totalCheckedIn);
+    const onTimeRate = totalCheckedIn > 0 ? Math.round((todayPresent / totalCheckedIn) * 100) : 100;
+
     return sendSuccess(res, {
       data: {
         cards: {
           totalEmployees,
           activeEmployees,
+          todayPresent,
+          todayLate,
+          todayHalfDay,
+          todayAbsent,
+          totalCheckedIn,
+          onTimeRate,
           totalLeads,
           newLeads: statusMap.new_lead,
           leadsInProgress,
@@ -220,6 +242,12 @@ export const getDashboardStats = async (req, res, next) => {
             count: statusMap[k],
           })),
           employeePerformance: performanceFormatted,
+          attendanceDistribution: [
+            { name: 'On-Time Present', value: todayPresent },
+            { name: 'Late Arrivals (+5m)', value: todayLate },
+            { name: 'Half-Day', value: todayHalfDay },
+            { name: 'Absent / Pending', value: todayAbsent },
+          ],
         },
         recent: {
           leads: recentLeads,

@@ -62,6 +62,18 @@ const employeeSchema = new Schema(
       type: Date,
       default: Date.now,
     },
+    shiftStartTime: {
+      type: String,
+      default: '09:00', // Format: HH:mm (24hr)
+    },
+    shiftEndTime: {
+      type: String,
+      default: '18:00', // Format: HH:mm (24hr)
+    },
+    lateGracePeriodMinutes: {
+      type: Number,
+      default: 5, // 5 minutes late threshold as requested
+    },
     employmentStatus: {
       type: String,
       enum: ['active', 'probation', 'resigned', 'terminated', 'inactive'],

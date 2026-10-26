@@ -26,18 +26,34 @@ export const checkIn = async (req, res, next) => {
       return sendError(res, { statusCode: 400, message: 'You have already checked in today.' });
     }
 
-    // Load company settings for working hours
-    const settings = (await CompanySettings.findOne()) || {
+    // Load company settings & specific employee assigned shift timing
+    const [settings, employee] = await Promise.all([
+      CompanySettings.findOne(),
+      Employee.findById(employeeId),
+    ]);
+
+    const activeSettings = settings || {
       workStartTime: '09:00',
-      lateGracePeriodMinutes: 15,
+      workEndTime: '18:00',
+      lateGracePeriodMinutes: 5,
     };
 
+    // Employee specific shift timing or fallback to company default
+    const workStartTime = employee?.shiftStartTime?.trim() || activeSettings.workStartTime || '09:00';
+    const graceMinutes =
+      employee?.lateGracePeriodMinutes !== undefined &&
+      employee?.lateGracePeriodMinutes !== null &&
+      employee?.lateGracePeriodMinutes >= 0
+        ? Number(employee.lateGracePeriodMinutes)
+        : (activeSettings.lateGracePeriodMinutes ?? 5);
+
     const now = new Date();
-    const [startHour, startMinute] = settings.workStartTime.split(':').map(Number);
+    const [startHour, startMinute] = workStartTime.split(':').map(Number);
     const scheduledStart = new Date(now);
     scheduledStart.setHours(startHour, startMinute, 0, 0);
 
-    const graceLimit = new Date(scheduledStart.getTime() + settings.lateGracePeriodMinutes * 60 * 1000);
+    // Exact Grace Limit (e.g. 5 minutes after shift start time)
+    const graceLimit = new Date(scheduledStart.getTime() + graceMinutes * 60 * 1000);
 
     let status = 'present';
     let lateMinutes = 0;
@@ -72,12 +88,12 @@ export const checkIn = async (req, res, next) => {
       entityType: 'Attendance',
       entityId: record._id,
       performedBy: req.user._id,
-      details: { status, lateMinutes, date: todayStr },
+      details: { status, lateMinutes, date: todayStr, scheduledStart: workStartTime, graceMinutes },
       req,
     });
 
     return sendSuccess(res, {
-      message: `Check-in successful! ${status === 'late' ? `Marked Late (${lateMinutes} mins)` : 'Marked On-Time'}.`,
+      message: `Check-in successful! ${status === 'late' ? `Marked Late (${lateMinutes} mins after ${workStartTime})` : 'Marked On-Time'}.`,
       data: { attendance: record },
     });
   } catch (error) {
@@ -178,7 +194,7 @@ export const getMyAttendance = async (req, res, next) => {
 
 export const getAllAttendance = async (req, res, next) => {
   try {
-    const { date, department, status, page = 1, limit = 50 } = req.query;
+    const { date, department, status, page = 1, limit = 100 } = req.query;
 
     const filter = {};
     if (date) filter.date = date;
@@ -195,7 +211,7 @@ export const getAllAttendance = async (req, res, next) => {
 
     const [records, total] = await Promise.all([
       Attendance.find(filter)
-        .populate('employee', 'fullName email employeeId department designation')
+        .populate('employee', 'fullName email employeeId department designation shiftStartTime shiftEndTime lateGracePeriodMinutes')
         .sort({ date: -1, createdAt: -1 })
         .skip(skip)
         .limit(limitNum),
@@ -210,6 +226,107 @@ export const getAllAttendance = async (req, res, next) => {
         total,
         totalPages: Math.ceil(total / limitNum),
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Attendance Analytics & Summary Report (Present, Late, On-Time %, Absent)
+export const getAttendanceAnalytics = async (req, res, next) => {
+  try {
+    const todayStr = getTodayDateString();
+
+    const [totalActiveEmployees, todayRecords, statusBreakdown] = await Promise.all([
+      Employee.countDocuments({ employmentStatus: 'active', isDeleted: false }),
+      Attendance.find({ date: todayStr }).populate('employee', 'fullName department employeeId designation'),
+      Attendance.aggregate([
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 },
+            totalLateMinutes: { $sum: '$lateMinutes' },
+            totalHours: { $sum: '$workingHours' },
+          },
+        },
+      ]),
+    ]);
+
+    const presentToday = todayRecords.filter((r) => r.status === 'present').length;
+    const lateToday = todayRecords.filter((r) => r.status === 'late').length;
+    const halfDayToday = todayRecords.filter((r) => r.status === 'half_day').length;
+    const totalCheckedIn = todayRecords.length;
+    const absentToday = Math.max(0, totalActiveEmployees - totalCheckedIn);
+    const onTimeRate = totalCheckedIn > 0 ? Math.round((presentToday / totalCheckedIn) * 100) : 100;
+
+    return sendSuccess(res, {
+      data: {
+        today: {
+          totalActiveEmployees,
+          totalCheckedIn,
+          present: presentToday,
+          late: lateToday,
+          halfDay: halfDayToday,
+          absent: absentToday,
+          onTimeRate,
+        },
+        statusBreakdown,
+        todayRecords,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Admin Manual Attendance Record / Override
+export const recordManualAttendance = async (req, res, next) => {
+  try {
+    const { employeeId, date, status, checkInTime, checkOutTime, lateMinutes, notes } = req.body;
+
+    if (!employeeId || !date) {
+      return sendError(res, { statusCode: 400, message: 'Employee ID and date are required.' });
+    }
+
+    let record = await Attendance.findOne({ employee: employeeId, date });
+
+    if (!record) {
+      record = new Attendance({
+        employee: employeeId,
+        date,
+        status: status || 'present',
+        checkInTime: checkInTime ? new Date(checkInTime) : new Date(),
+        checkOutTime: checkOutTime ? new Date(checkOutTime) : null,
+        lateMinutes: lateMinutes !== undefined ? Number(lateMinutes) : 0,
+        notes: notes || 'Manually recorded by Admin',
+      });
+    } else {
+      if (status) record.status = status;
+      if (checkInTime) record.checkInTime = new Date(checkInTime);
+      if (checkOutTime) record.checkOutTime = new Date(checkOutTime);
+      if (lateMinutes !== undefined) record.lateMinutes = Number(lateMinutes);
+      if (notes) record.notes = notes;
+    }
+
+    if (record.checkInTime && record.checkOutTime) {
+      const diffMs = record.checkOutTime - record.checkInTime;
+      record.workingHours = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+    }
+
+    await record.save();
+
+    await logAudit({
+      action: 'ATTENDANCE_MANUAL_OVERRIDE',
+      entityType: 'Attendance',
+      entityId: record._id,
+      performedBy: req.user._id,
+      details: { employeeId, date, status: record.status },
+      req,
+    });
+
+    return sendSuccess(res, {
+      message: 'Attendance record saved successfully.',
+      data: { attendance: record },
     });
   } catch (error) {
     next(error);

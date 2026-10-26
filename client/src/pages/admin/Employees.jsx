@@ -135,8 +135,20 @@ export const Employees = () => {
       header: 'Designation',
       accessorKey: 'designation',
       cell: ({ row }) => (
-        <span className="text-xs text-slate-600 dark:text-slate-300">
+        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
           {row.original.designation}
+        </span>
+      ),
+    },
+    {
+      header: 'Shift Timing',
+      accessorKey: 'shiftStartTime',
+      cell: ({ row }) => (
+        <span className="text-xs text-slate-700 dark:text-slate-300 font-mono">
+          {row.original.shiftStartTime || '09:00'} – {row.original.shiftEndTime || '18:00'}
+          <span className="block text-[10px] text-amber-600 dark:text-amber-400 font-sans font-semibold">
+            {row.original.lateGracePeriodMinutes ?? 5}m grace
+          </span>
         </span>
       ),
     },
@@ -248,11 +260,14 @@ export const Employees = () => {
               className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200"
             >
               <option value="">All Departments</option>
-              <option value="Executive & Management">Executive</option>
-              <option value="Sales & Business Development">Sales</option>
+              <option value="Sales & Business Development">Sales & Marketing</option>
+              <option value="Graphic Designing & Media">Graphic Designing</option>
+              <option value="Video Editing & Content Creation">Video Editing</option>
+              <option value="Team Leads & Project Management">Team Leads & PM</option>
               <option value="Custom Software Engineering">Engineering</option>
               <option value="UI/UX Design">UI/UX Design</option>
               <option value="Operations & HR">HR / Ops</option>
+              <option value="Executive & Management">Executive</option>
             </select>
 
             <select

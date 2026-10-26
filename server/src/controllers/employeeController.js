@@ -143,6 +143,9 @@ export const createEmployee = async (req, res, next) => {
       manager = null,
       joiningDate = new Date(),
       employmentStatus = 'active',
+      shiftStartTime = '09:00',
+      shiftEndTime = '18:00',
+      lateGracePeriodMinutes = 5,
       address,
       emergencyContact,
     } = req.body;
@@ -189,6 +192,9 @@ export const createEmployee = async (req, res, next) => {
       manager: manager || null,
       joiningDate,
       employmentStatus,
+      shiftStartTime: shiftStartTime || '09:00',
+      shiftEndTime: shiftEndTime || '18:00',
+      lateGracePeriodMinutes: lateGracePeriodMinutes !== undefined ? Number(lateGracePeriodMinutes) : 5,
       address,
       emergencyContact,
     });
@@ -250,6 +256,9 @@ export const updateEmployee = async (req, res, next) => {
     if (joiningDate !== undefined) employee.joiningDate = joiningDate;
     if (address !== undefined) employee.address = address;
     if (emergencyContact !== undefined) employee.emergencyContact = emergencyContact;
+    if (req.body.shiftStartTime !== undefined) employee.shiftStartTime = req.body.shiftStartTime;
+    if (req.body.shiftEndTime !== undefined) employee.shiftEndTime = req.body.shiftEndTime;
+    if (req.body.lateGracePeriodMinutes !== undefined) employee.lateGracePeriodMinutes = Number(req.body.lateGracePeriodMinutes);
 
     if (employmentStatus !== undefined) {
       employee.employmentStatus = employmentStatus;
