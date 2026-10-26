@@ -16,6 +16,10 @@ import {
   PhoneCall,
   Clock,
   Sparkles,
+  Zap,
+  DollarSign,
+  CheckCircle2,
+  Tag,
 } from 'lucide-react';
 import api from '../../services/api';
 import { PageHeader } from '../../components/layout/PageHeader';
@@ -37,7 +41,8 @@ export const Clients = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Filters
-  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'active' | 'scheduled_calls' | 'archived'
+  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'direct_closed' | 'active' | 'scheduled_calls' | 'archived'
+  const [filterAgent, setFilterAgent] = useState('all');
 
   // Date drill-down modal for calendar
   const [selectedCalendarItem, setSelectedCalendarItem] = useState(null);
@@ -52,6 +57,12 @@ export const Clients = () => {
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [accountManager, setAccountManager] = useState('');
+  const [isDirectClosed, setIsDirectClosed] = useState(false);
+  const [closedBy, setClosedBy] = useState('');
+  const [dealValue, setDealValue] = useState(1000);
+  const [actualRevenue, setActualRevenue] = useState(1000);
+  const [paymentStatus, setPaymentStatus] = useState('fully_paid');
+  const [selectedService, setSelectedService] = useState('Video Editing');
   const [nextFollowUpDate, setNextFollowUpDate] = useState('');
   const [followUpReason, setFollowUpReason] = useState('Client requested call-back after 1 month');
 
@@ -62,6 +73,8 @@ export const Clients = () => {
       if (filterTab === 'active') params.status = 'active';
       if (filterTab === 'archived') params.status = 'archived';
       if (filterTab === 'scheduled_calls') params.hasFollowUp = 'true';
+      if (filterTab === 'direct_closed') params.directClosed = 'true';
+      if (filterAgent !== 'all') params.closedBy = filterAgent;
 
       const res = await api.get('/clients', { params });
       setClients(res.data.data);
@@ -91,7 +104,7 @@ export const Clients = () => {
 
   useEffect(() => {
     fetchClients();
-  }, [filterTab]);
+  }, [filterTab, filterAgent]);
 
   useEffect(() => {
     fetchCalendarData();
@@ -122,21 +135,36 @@ export const Clients = () => {
   const handleCreateClient = async (e) => {
     e.preventDefault();
     try {
+      const userEmpId = user?.employee?._id || user?.employee;
       await api.post('/clients', {
         name,
         companyName,
         email,
         phoneNumber,
-        accountManager: isEmployee ? (user?.employee?._id || user?.employee) : (accountManager || null),
+        accountManager: isEmployee ? userEmpId : (accountManager || null),
+        closedBy: isDirectClosed ? (closedBy || userEmpId || null) : (closedBy || null),
+        dealValue: isDirectClosed ? Number(dealValue) || 0 : 0,
+        actualRevenue: isDirectClosed ? Number(actualRevenue) || 0 : 0,
+        paymentStatus: isDirectClosed ? paymentStatus : 'fully_paid',
+        isDirectClosed,
+        services: selectedService ? [selectedService] : [],
         nextFollowUpDate: nextFollowUpDate || null,
         followUpReason: nextFollowUpDate ? followUpReason : '',
       });
-      toast.success('Client profile created successfully');
+      toast.success(
+        isDirectClosed
+          ? 'Direct closed client & won sale recorded!'
+          : 'Client profile created successfully'
+      );
       setIsModalOpen(false);
       setName('');
       setCompanyName('');
       setEmail('');
       setPhoneNumber('');
+      setIsDirectClosed(false);
+      setDealValue(1000);
+      setActualRevenue(1000);
+      setClosedBy('');
       setNextFollowUpDate('');
       setFollowUpReason('Client requested call-back after 1 month');
       fetchClients();
@@ -208,6 +236,11 @@ export const Clients = () => {
               {row.original.companyName}
             </span>
           )}
+          {row.original.services?.length > 0 && (
+            <span className="inline-block mt-1 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md">
+              {row.original.services.join(', ')}
+            </span>
+          )}
         </div>
       ),
     },
@@ -224,6 +257,60 @@ export const Clients = () => {
           )}
         </div>
       ),
+    },
+    {
+      header: 'Sale & Closing Agent',
+      accessorKey: 'closedBy',
+      cell: ({ row }) => {
+        const c = row.original;
+        const agent = c.closedBy || c.accountManager;
+        return (
+          <div className="space-y-1 text-xs">
+            <div className="flex items-center gap-1.5">
+              {c.dealValue > 0 ? (
+                <span className="font-extrabold text-emerald-600 dark:text-emerald-400 text-sm">
+                  ${Number(c.dealValue).toLocaleString()}
+                </span>
+              ) : (
+                <span className="text-slate-400 text-xs">Standard Account</span>
+              )}
+              {c.isDirectClosed && (
+                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/40">
+                  ⚡ Direct Won
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+              <User size={12} className="text-blue-500 shrink-0" />
+              <span>{agent?.fullName || 'Direct / Management'}</span>
+              {agent?.designation && (
+                <span className="text-[10px] text-slate-400 font-normal truncate max-w-[110px]">
+                  • {agent.designation}
+                </span>
+              )}
+            </div>
+
+            {c.paymentStatus && c.dealValue > 0 && (
+              <span
+                className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                  c.paymentStatus === 'fully_paid'
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                    : c.paymentStatus === 'partially_paid'
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                    : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                }`}
+              >
+                {c.paymentStatus === 'fully_paid'
+                  ? '✓ Fully Paid'
+                  : c.paymentStatus === 'partially_paid'
+                  ? '⏳ Partial Paid'
+                  : '✕ Unpaid'}
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       header: 'Account Manager',
@@ -295,10 +382,10 @@ export const Clients = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Client Accounts"
-        subtitle="Manage customer profiles, employee assignments, and future call-back schedules"
+        title="Client Accounts & Sales Closure"
+        subtitle="Manage customer profiles, direct closed deals, sales agent performance, and call schedules"
         actions={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* View Mode Toggle: List / Calendar */}
             <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
               <button
@@ -309,7 +396,7 @@ export const Clients = () => {
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
                 }`}
               >
-                <List size={16} /> List View
+                <List size={16} /> List
               </button>
               <button
                 onClick={() => setViewMode('calendar')}
@@ -319,15 +406,38 @@ export const Clients = () => {
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
                 }`}
               >
-                <CalendarDays size={16} /> Calendar View
+                <CalendarDays size={16} /> Calendar
               </button>
             </div>
 
+            {/* Direct Close Client Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsDirectClosed(true);
+                setDealValue(1000);
+                setActualRevenue(1000);
+                setPaymentStatus('fully_paid');
+                if (isEmployee) {
+                  setClosedBy(user?.employee?._id || user?.employee || '');
+                  setAccountManager(user?.employee?._id || user?.employee || '');
+                }
+                setIsModalOpen(true);
+              }}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-md flex items-center gap-1.5 transition transform active:scale-95"
+            >
+              <Zap size={14} className="fill-current" /> Direct Close Client
+            </button>
+
+            {/* Standard Add Client Button */}
             <Button
-              variant="primary"
+              variant="outline"
               size="sm"
               icon={Plus}
               onClick={() => {
+                setIsDirectClosed(false);
+                setDealValue(0);
+                setActualRevenue(0);
                 if (isEmployee) {
                   setAccountManager(user?.employee?._id || user?.employee || '');
                 }
@@ -340,32 +450,53 @@ export const Clients = () => {
         }
       />
 
-      {/* Filter Tabs */}
+      {/* Filter Tabs & Closing Agent Filter */}
       {viewMode === 'list' && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {[
-            { key: 'all', label: 'All Clients' },
-            { key: 'active', label: 'Active Accounts' },
-            { key: 'scheduled_calls', label: '📞 Call-Back Scheduled' },
-            { key: 'archived', label: 'Archived' },
-          ].map((tab) => {
-            const isActive = filterTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                onClick={() => setFilterTab(tab.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                  isActive
-                    ? tab.key === 'scheduled_calls'
-                      ? 'bg-amber-600 text-white shadow-sm'
-                      : 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+            {[
+              { key: 'all', label: 'All Accounts' },
+              { key: 'direct_closed', label: '⚡ Direct Won Deals' },
+              { key: 'active', label: 'Active Accounts' },
+              { key: 'scheduled_calls', label: '📞 Call-Back Scheduled' },
+              { key: 'archived', label: 'Archived' },
+            ].map((tab) => {
+              const isActive = filterTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setFilterTab(tab.key)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                    isActive
+                      ? tab.key === 'direct_closed'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : tab.key === 'scheduled_calls'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <User size={14} className="text-slate-400 hidden sm:block" />
+            <select
+              value={filterAgent}
+              onChange={(e) => setFilterAgent(e.target.value)}
+              className="w-full sm:w-auto px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium text-slate-700 dark:text-slate-200"
+            >
+              <option value="all">Filter by Closing Agent (All)</option>
+              {employees.map((emp) => (
+                <option key={emp._id} value={emp._id}>
+                  {emp.fullName} ({emp.designation || emp.department})
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 
@@ -518,88 +649,243 @@ export const Clients = () => {
         </div>
       </Modal>
 
-      {/* Add Client Modal */}
+      {/* Add Client / Direct Close Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Create Client Account"
-        subtitle="Add a direct client or enterprise customer"
-        maxWidth="max-w-md"
+        title={isDirectClosed ? '⚡ Direct Closed Client & Won Sale' : 'Create Client Account'}
+        subtitle={
+          isDirectClosed
+            ? 'Instantly records client profile & logs a Won Deal in Sales Pipeline under the closing agent'
+            : 'Add a direct client or enterprise customer'
+        }
+        maxWidth="max-w-lg"
       >
         <form onSubmit={handleCreateClient} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Contact Name *
+          {/* Direct Close Toggle Banner */}
+          <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 bg-emerald-600 text-white rounded-xl shadow-sm">
+                <Zap size={16} />
+              </span>
+              <div>
+                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200 block">
+                  Direct Closed Deal / Instant Won Sale
+                </span>
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                  Logs direct sale revenue and credits the closing agent automatically
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={isDirectClosed}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setIsDirectClosed(val);
+                  if (val && !dealValue) setDealValue(1000);
+                  if (val && !actualRevenue) setActualRevenue(1000);
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
             </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Mark Robinson"
-              className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
-            />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Company Name
-            </label>
-            <input
-              type="text"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="e.g. Apex FinTech Solutions"
-              className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
-            />
-          </div>
+          {/* Direct Closed Details Section */}
+          {isDirectClosed && (
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/50 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <DollarSign size={14} className="text-emerald-600" /> Sale & Closing Details
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  Won Deal
+                </span>
+              </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Email Address *
-            </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="contact@company.com"
-              className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
-            />
-          </div>
+              {/* Closing Agent (Kis agent ne close kia) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Closed By Sales Agent / Representative *
+                </label>
+                <select
+                  required={isDirectClosed}
+                  value={closedBy}
+                  onChange={(e) => setClosedBy(e.target.value)}
+                  className="w-full px-3 py-2 text-xs md:text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white font-medium focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">Select Agent Who Closed This Deal *</option>
+                  {employees.map((emp) => (
+                    <option key={emp._id} value={emp._id}>
+                      {emp.fullName} — {emp.designation || emp.department}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  This agent will receive full conversion credit in analytics and reports.
+                </p>
+              </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Phone Number
-            </label>
-            <input
-              type="text"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              placeholder="+1 555 000 0000"
-              className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
-            />
-          </div>
+              {/* Deal Value & Actual Revenue */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Total Sale / Contract Value ($) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required={isDirectClosed}
+                    value={dealValue}
+                    onChange={(e) => setDealValue(e.target.value)}
+                    placeholder="1000"
+                    className="w-full px-3 py-2 text-xs md:text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white font-bold"
+                  />
+                </div>
 
-          {!isEmployee && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Assign Account Manager
-              </label>
-              <select
-                value={accountManager}
-                onChange={(e) => setAccountManager(e.target.value)}
-                className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
-              >
-                <option value="">None (Executive Managed)</option>
-                {employees.map((emp) => (
-                  <option key={emp._id} value={emp._id}>
-                    {emp.fullName} ({emp.department})
-                  </option>
-                ))}
-              </select>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Actual Revenue Received ($) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required={isDirectClosed}
+                    value={actualRevenue}
+                    onChange={(e) => setActualRevenue(e.target.value)}
+                    placeholder="1000"
+                    className="w-full px-3 py-2 text-xs md:text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white font-bold text-emerald-600 dark:text-emerald-400"
+                  />
+                </div>
+              </div>
+
+              {/* Payment Status */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Payment Collection Status
+                </label>
+                <select
+                  value={paymentStatus}
+                  onChange={(e) => setPaymentStatus(e.target.value)}
+                  className="w-full px-3 py-2 text-xs md:text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+                >
+                  <option value="fully_paid">✓ Fully Paid (100% Received in Bank)</option>
+                  <option value="partially_paid">⏳ Partially Paid (Advance / Milestone Received)</option>
+                  <option value="unpaid">✕ Unpaid (Invoice Dispatched, Payment Pending)</option>
+                </select>
+              </div>
+
+              {/* Service Category */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Service Closed
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Video Editing',
+                    'Graphic Designing',
+                    'Social Media Marketing',
+                    'Web Development',
+                    'Full Agency Retainer',
+                  ].map((srv) => (
+                    <button
+                      key={srv}
+                      type="button"
+                      onClick={() => setSelectedService(srv)}
+                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition ${
+                        selectedService === srv
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {srv}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
+
+          {/* Client Details */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Contact Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Mark Robinson"
+                className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Company / Brand Name
+              </label>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="e.g. Apex FinTech Solutions"
+                className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="contact@company.com"
+                  className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Phone Number
+                </label>
+                <input
+                  type="text"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+1 555 000 0000"
+                  className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+                />
+              </div>
+            </div>
+
+            {!isEmployee && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Assign Account Manager
+                </label>
+                <select
+                  value={accountManager}
+                  onChange={(e) => setAccountManager(e.target.value)}
+                  className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+                >
+                  <option value="">None (Executive Managed)</option>
+                  {employees.map((emp) => (
+                    <option key={emp._id} value={emp._id}>
+                      {emp.fullName} ({emp.department})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
           {/* Quick Initial Call-Back Option */}
           <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800 space-y-2">
@@ -641,8 +927,13 @@ export const Clients = () => {
             <Button variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" size="sm">
-              Create Client
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              className={isDirectClosed ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+            >
+              {isDirectClosed ? '⚡ Save Direct Closed Client & Deal' : 'Create Client'}
             </Button>
           </div>
         </form>

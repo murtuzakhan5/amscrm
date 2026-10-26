@@ -44,6 +44,21 @@ const dealSchema = new Schema(
       required: true,
       index: true,
     },
+    closedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'Employee',
+      default: null,
+      index: true,
+    },
+    isDirectClosed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    closedAt: {
+      type: Date,
+      default: null,
+    },
     stage: {
       type: String,
       enum: DEAL_STAGES,

@@ -18,6 +18,8 @@ export const getClients = async (req, res, next) => {
       status = '',
       hasFollowUp = '',
       accountManager = '',
+      closedBy = '',
+      directClosed = '',
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = req.query;
@@ -28,6 +30,12 @@ export const getClients = async (req, res, next) => {
     if (status) filter.status = status;
     if (hasFollowUp === 'true') {
       filter.nextFollowUpDate = { $ne: null };
+    }
+    if (directClosed === 'true') {
+      filter.isDirectClosed = true;
+    }
+    if (closedBy) {
+      filter.closedBy = closedBy;
     }
     if (accountManager && req.user.role !== 'employee') {
       filter.accountManager = accountManager;
@@ -48,7 +56,8 @@ export const getClients = async (req, res, next) => {
 
     const [clients, total] = await Promise.all([
       Client.find(filter)
-        .populate('accountManager', 'fullName email employeeId')
+        .populate('accountManager', 'fullName email employeeId designation department')
+        .populate('closedBy', 'fullName email employeeId designation department')
         .sort(sort)
         .skip(skip)
         .limit(limitNum),
@@ -186,7 +195,8 @@ export const getClientById = async (req, res, next) => {
     const { id } = req.params;
 
     const client = await Client.findById(id)
-      .populate('accountManager', 'fullName email employeeId phoneNumber designation')
+      .populate('accountManager', 'fullName email employeeId phoneNumber designation department')
+      .populate('closedBy', 'fullName email employeeId phoneNumber designation department')
       .populate('convertedFromLead')
       .populate('followUps.createdBy', 'email fullName')
       .populate('clientNotes.author', 'email fullName');
@@ -197,7 +207,7 @@ export const getClientById = async (req, res, next) => {
 
     const [projects, deals, meetings] = await Promise.all([
       Project.find({ client: client._id }).populate('projectManager', 'fullName'),
-      Deal.find({ client: client._id }).populate('owner', 'fullName'),
+      Deal.find({ client: client._id }).populate('owner', 'fullName').populate('closedBy', 'fullName'),
       Meeting.find({ relatedClient: client._id }).populate('assignedEmployee', 'fullName'),
     ]);
 
@@ -224,6 +234,11 @@ export const createClient = async (req, res, next) => {
       address,
       services,
       accountManager,
+      closedBy,
+      dealValue,
+      actualRevenue,
+      paymentStatus,
+      isDirectClosed,
       notes,
       nextFollowUpDate,
       followUpReason,
@@ -233,9 +248,10 @@ export const createClient = async (req, res, next) => {
       return sendError(res, { statusCode: 400, message: 'Client name and email are required.' });
     }
 
-    // If an employee is creating the client, default accountManager to that employee if not provided
+    // Resolve employee references
     const userEmpId = req.user.employee?._id || req.user.employee;
     const resolvedAccountManager = accountManager || (req.user.role === 'employee' ? userEmpId : null);
+    const resolvedClosedBy = closedBy || (isDirectClosed ? (resolvedAccountManager || userEmpId) : null);
 
     const followUps = [];
     if (nextFollowUpDate) {
@@ -249,6 +265,10 @@ export const createClient = async (req, res, next) => {
       });
     }
 
+    const numericDealValue = Number(dealValue) || 0;
+    const numericActualRevenue = Number(actualRevenue) || 0;
+    const directCloseFlag = Boolean(isDirectClosed);
+
     const client = await Client.create({
       name,
       companyName: companyName || '',
@@ -257,6 +277,12 @@ export const createClient = async (req, res, next) => {
       address: address || {},
       services: services || [],
       accountManager: resolvedAccountManager,
+      closedBy: resolvedClosedBy,
+      dealValue: numericDealValue,
+      actualRevenue: numericActualRevenue,
+      paymentStatus: paymentStatus || 'fully_paid',
+      isDirectClosed: directCloseFlag,
+      closedAt: directCloseFlag ? new Date() : null,
       notes: notes || '',
       nextFollowUpDate: nextFollowUpDate ? new Date(nextFollowUpDate) : null,
       followUpReason: followUpReason || '',
@@ -265,20 +291,58 @@ export const createClient = async (req, res, next) => {
       createdBy: req.user._id,
     });
 
+    // Automatically create a won deal in the Sales Pipeline for direct closed clients
+    if (directCloseFlag && (numericDealValue > 0 || numericActualRevenue > 0)) {
+      try {
+        await Deal.create({
+          title: `${companyName || name} - Direct Sale`,
+          client: client._id,
+          value: numericDealValue,
+          actualRevenueReceived: numericActualRevenue,
+          currency: 'USD',
+          owner: resolvedClosedBy || resolvedAccountManager || req.user._id,
+          closedBy: resolvedClosedBy || resolvedAccountManager || req.user._id,
+          stage: 'won',
+          status: 'won',
+          probability: 100,
+          expectedCloseDate: new Date(),
+          paymentStatus: paymentStatus || 'fully_paid',
+          isDirectClosed: true,
+          closedAt: new Date(),
+          notes: notes || 'Direct closed client sale',
+          createdBy: req.user._id,
+        });
+      } catch (dealErr) {
+        console.error('Failed to auto-create direct closed deal:', dealErr.message);
+      }
+    }
+
     await logAudit({
       action: 'CLIENT_CREATED',
       entityType: 'Client',
       entityId: client._id,
       performedBy: req.user._id,
-      details: { name, companyName, email, accountManager: resolvedAccountManager },
+      details: {
+        name,
+        companyName,
+        email,
+        accountManager: resolvedAccountManager,
+        closedBy: resolvedClosedBy,
+        isDirectClosed: directCloseFlag,
+        dealValue: numericDealValue,
+      },
       req,
     });
 
-    const populated = await Client.findById(client._id).populate('accountManager', 'fullName email');
+    const populated = await Client.findById(client._id)
+      .populate('accountManager', 'fullName email employeeId designation department')
+      .populate('closedBy', 'fullName email employeeId designation department');
 
     return sendSuccess(res, {
       statusCode: 201,
-      message: 'Client created successfully.',
+      message: directCloseFlag
+        ? 'Direct closed client & sale recorded successfully.'
+        : 'Client created successfully.',
       data: { client: populated },
     });
   } catch (error) {
@@ -303,6 +367,11 @@ export const updateClient = async (req, res, next) => {
       address,
       services,
       accountManager,
+      closedBy,
+      dealValue,
+      actualRevenue,
+      paymentStatus,
+      isDirectClosed,
       status,
       notes,
       nextFollowUpDate,
@@ -317,6 +386,14 @@ export const updateClient = async (req, res, next) => {
     if (address !== undefined) client.address = address;
     if (services !== undefined) client.services = services;
     if (accountManager !== undefined) client.accountManager = accountManager || null;
+    if (closedBy !== undefined) client.closedBy = closedBy || null;
+    if (dealValue !== undefined) client.dealValue = Number(dealValue) || 0;
+    if (actualRevenue !== undefined) client.actualRevenue = Number(actualRevenue) || 0;
+    if (paymentStatus !== undefined) client.paymentStatus = paymentStatus;
+    if (isDirectClosed !== undefined) {
+      client.isDirectClosed = Boolean(isDirectClosed);
+      if (client.isDirectClosed && !client.closedAt) client.closedAt = new Date();
+    }
     if (status !== undefined) client.status = status;
     if (notes !== undefined) client.notes = notes;
     if (nextFollowUpDate !== undefined) client.nextFollowUpDate = nextFollowUpDate ? new Date(nextFollowUpDate) : null;
@@ -334,7 +411,9 @@ export const updateClient = async (req, res, next) => {
       req,
     });
 
-    const populated = await Client.findById(client._id).populate('accountManager', 'fullName email');
+    const populated = await Client.findById(client._id)
+      .populate('accountManager', 'fullName email employeeId designation department')
+      .populate('closedBy', 'fullName email employeeId designation department');
 
     return sendSuccess(res, {
       message: 'Client updated successfully.',

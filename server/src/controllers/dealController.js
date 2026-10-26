@@ -18,7 +18,8 @@ export const getDeals = async (req, res, next) => {
     }
 
     const deals = await Deal.find(filter)
-      .populate('owner', 'fullName email')
+      .populate('owner', 'fullName email designation department')
+      .populate('closedBy', 'fullName email designation department')
       .populate('lead', 'clientName companyName leadId')
       .populate('client', 'name companyName')
       .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 });
@@ -92,6 +93,8 @@ export const createDeal = async (req, res, next) => {
       value,
       currency = 'USD',
       owner,
+      closedBy,
+      isDirectClosed = false,
       stage = 'qualification',
       expectedCloseDate,
       probability = 50,
@@ -107,6 +110,9 @@ export const createDeal = async (req, res, next) => {
       return sendError(res, { statusCode: 400, message: 'Deal owner is required.' });
     }
 
+    const isWon = stage === 'won' || Boolean(isDirectClosed);
+    const resolvedClosedBy = closedBy || (isWon ? dealOwner : null);
+
     const deal = await Deal.create({
       title,
       lead,
@@ -114,9 +120,12 @@ export const createDeal = async (req, res, next) => {
       value: Number(value),
       currency,
       owner: dealOwner,
+      closedBy: resolvedClosedBy,
+      isDirectClosed: Boolean(isDirectClosed),
+      closedAt: isWon ? new Date() : null,
       stage,
       expectedCloseDate: new Date(expectedCloseDate),
-      probability: Number(probability),
+      probability: isWon ? 100 : Number(probability),
       status: stage === 'won' ? 'won' : stage === 'lost' ? 'lost' : 'open',
       notes,
       createdBy: req.user._id,
@@ -127,11 +136,13 @@ export const createDeal = async (req, res, next) => {
       entityType: 'Deal',
       entityId: deal._id,
       performedBy: req.user._id,
-      details: { title, value, owner: dealOwner },
+      details: { title, value, owner: dealOwner, closedBy: resolvedClosedBy },
       req,
     });
 
-    const populated = await Deal.findById(deal._id).populate('owner', 'fullName email');
+    const populated = await Deal.findById(deal._id)
+      .populate('owner', 'fullName email designation department')
+      .populate('closedBy', 'fullName email designation department');
 
     return sendSuccess(res, {
       statusCode: 201,
@@ -157,6 +168,8 @@ export const updateDeal = async (req, res, next) => {
       value,
       currency,
       owner,
+      closedBy,
+      isDirectClosed,
       stage,
       expectedCloseDate,
       probability,
@@ -171,6 +184,8 @@ export const updateDeal = async (req, res, next) => {
     if (value !== undefined) deal.value = Number(value);
     if (currency !== undefined) deal.currency = currency;
     if (owner !== undefined) deal.owner = owner;
+    if (closedBy !== undefined) deal.closedBy = closedBy || null;
+    if (isDirectClosed !== undefined) deal.isDirectClosed = Boolean(isDirectClosed);
     if (expectedCloseDate !== undefined) deal.expectedCloseDate = new Date(expectedCloseDate);
     if (probability !== undefined) deal.probability = Number(probability);
     if (paymentStatus !== undefined) deal.paymentStatus = paymentStatus;
@@ -180,9 +195,15 @@ export const updateDeal = async (req, res, next) => {
 
     if (stage !== undefined) {
       deal.stage = stage;
-      if (stage === 'won') deal.status = 'won';
-      else if (stage === 'lost') deal.status = 'lost';
-      else deal.status = 'open';
+      if (stage === 'won') {
+        deal.status = 'won';
+        if (!deal.closedBy) deal.closedBy = closedBy || deal.owner;
+        if (!deal.closedAt) deal.closedAt = new Date();
+      } else if (stage === 'lost') {
+        deal.status = 'lost';
+      } else {
+        deal.status = 'open';
+      }
     }
 
     if (status !== undefined) deal.status = status;
@@ -198,7 +219,9 @@ export const updateDeal = async (req, res, next) => {
       req,
     });
 
-    const populated = await Deal.findById(deal._id).populate('owner', 'fullName email');
+    const populated = await Deal.findById(deal._id)
+      .populate('owner', 'fullName email designation department')
+      .populate('closedBy', 'fullName email designation department');
 
     return sendSuccess(res, {
       message: 'Deal updated successfully.',

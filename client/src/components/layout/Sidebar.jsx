@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  X,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
@@ -129,69 +130,98 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
 
   const authorizedNavItems = navItems.filter((item) => item.roles.includes(role));
 
-  return (
-    <aside
-      className={`fixed inset-y-0 left-0 z-40 bg-[#17365D] text-white flex flex-col transition-all duration-300 shadow-xl ${
-        isOpen ? 'w-64' : 'w-20'
-      }`}
-    >
-      {/* Brand Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-blue-900/50">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shrink-0 shadow-md">
-            <span className="font-bold text-white text-lg tracking-wider">AMS</span>
-          </div>
-          {isOpen && (
-            <div className="flex flex-col whitespace-nowrap">
-              <span className="font-bold text-base tracking-wide text-white">AMS Crafters</span>
-              <span className="text-[10px] text-blue-300 font-medium tracking-wider uppercase">
-                CRM & Management
-              </span>
-            </div>
-          )}
-        </div>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="text-blue-300 hover:text-white p-1 rounded-lg hover:bg-blue-800/40 transition"
-          title={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        >
-          {isOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
-        </button>
-      </div>
+  const handleNavClick = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsOpen(false);
+    }
+  };
 
-      {/* Role Pill */}
+  return (
+    <>
+      {/* Mobile Backdrop Overlay */}
       {isOpen && (
-        <div className="px-4 py-2 bg-blue-950/40 mx-3 mt-3 rounded-lg border border-blue-800/30 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={14} className="text-blue-400" />
-            <span className="text-xs font-semibold text-blue-200 capitalize">
-              {role === 'admin' ? 'Super Admin' : role} Portal
-            </span>
-          </div>
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        </div>
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden transition-opacity"
+          onClick={() => setIsOpen(false)}
+        />
       )}
 
-      {/* Navigation Links */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {authorizedNavItems.map((item) => (
-          <NavLink
-            key={item.name}
-            to={item.path}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold'
-                  : 'text-blue-200/80 hover:bg-blue-900/40 hover:text-white'
-              } ${!isOpen ? 'justify-center' : ''}`
-            }
-            title={!isOpen ? item.name : undefined}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 bg-[#17365D] text-white flex flex-col transition-all duration-300 shadow-2xl ${
+          isOpen
+            ? 'translate-x-0 w-64'
+            : '-translate-x-full lg:translate-x-0 lg:w-20'
+        }`}
+      >
+        {/* Brand Header */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-blue-900/50">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shrink-0 shadow-md">
+              <span className="font-bold text-white text-lg tracking-wider">AMS</span>
+            </div>
+            {isOpen && (
+              <div className="flex flex-col whitespace-nowrap">
+                <span className="font-bold text-base tracking-wide text-white">AMS Crafters</span>
+                <span className="text-[10px] text-blue-300 font-medium tracking-wider uppercase">
+                  CRM & Management
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Toggle Button */}
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="hidden lg:flex text-blue-300 hover:text-white p-1 rounded-lg hover:bg-blue-800/40 transition"
+            title={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
-            <item.icon size={20} className="shrink-0" />
-            {isOpen && <span className="truncate">{item.name}</span>}
-          </NavLink>
-        ))}
-      </nav>
+            {isOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+          </button>
+
+          {/* Mobile Close (X) Button */}
+          <button
+            onClick={() => setIsOpen(false)}
+            className="lg:hidden text-blue-300 hover:text-white p-1.5 rounded-lg hover:bg-blue-800/40 transition"
+            title="Close menu"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Role Pill */}
+        {isOpen && (
+          <div className="px-4 py-2 bg-blue-950/40 mx-3 mt-3 rounded-lg border border-blue-800/30 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={14} className="text-blue-400" />
+              <span className="text-xs font-semibold text-blue-200 capitalize">
+                {role === 'admin' ? 'Super Admin' : role} Portal
+              </span>
+            </div>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          </div>
+        )}
+
+        {/* Navigation Links */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+          {authorizedNavItems.map((item) => (
+            <NavLink
+              key={item.name}
+              to={item.path}
+              onClick={handleNavClick}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold'
+                    : 'text-blue-200/80 hover:bg-blue-900/40 hover:text-white'
+                } ${!isOpen ? 'lg:justify-center' : ''}`
+              }
+              title={!isOpen ? item.name : undefined}
+            >
+              <item.icon size={20} className="shrink-0" />
+              {isOpen && <span className="truncate">{item.name}</span>}
+            </NavLink>
+          ))}
+        </nav>
 
       {/* User Footer & Logout */}
       <div className="p-3 border-t border-blue-900/50 bg-[#122a49]">
@@ -219,5 +249,6 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
         </div>
       </div>
     </aside>
+  </>
   );
 };

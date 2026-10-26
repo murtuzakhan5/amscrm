@@ -171,20 +171,33 @@ export const ClientDetail = () => {
             <ArrowLeft size={18} />
           </button>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">{client.name}</h2>
               <Badge status={client.status} />
+              {client.isDirectClosed && (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 flex items-center gap-1">
+                  ⚡ Direct Won (${Number(client.dealValue || 0).toLocaleString()})
+                </span>
+              )}
               {client.nextFollowUpDate && (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
                   <PhoneCall size={11} /> {countdown?.text}
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 mt-0.5">
               {client.companyName ? `${client.companyName} • ` : ''}Managed by{' '}
               <span className="font-semibold text-slate-700 dark:text-slate-300">
                 {client.accountManager?.fullName || 'Direct'}
               </span>
+              {client.closedBy && (
+                <>
+                  {' • '}Closed by{' '}
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                    {client.closedBy?.fullName} {client.closedBy?.designation ? `(${client.closedBy.designation})` : ''}
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>

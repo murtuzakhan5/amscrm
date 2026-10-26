@@ -32,11 +32,15 @@ export const SalesPipeline = () => {
   const [probability, setProbability] = useState(50);
   const [expectedCloseDate, setExpectedCloseDate] = useState('');
   const [owner, setOwner] = useState('');
+  const [closedBy, setClosedBy] = useState('');
+  const [filterAgent, setFilterAgent] = useState('all');
 
   const fetchDeals = async () => {
     try {
       setIsLoading(true);
-      const res = await api.get('/deals');
+      const params = {};
+      if (filterAgent !== 'all') params.owner = filterAgent;
+      const res = await api.get('/deals', { params });
       setDeals(res.data.data);
       setMeta(res.data.meta);
     } catch (err) {
@@ -59,6 +63,9 @@ export const SalesPipeline = () => {
 
   useEffect(() => {
     fetchDeals();
+  }, [filterAgent]);
+
+  useEffect(() => {
     fetchHelpers();
   }, []);
 
@@ -73,12 +80,14 @@ export const SalesPipeline = () => {
         probability: Number(probability),
         expectedCloseDate,
         owner,
+        closedBy: stage === 'won' ? (closedBy || owner) : null,
       });
       toast.success('Deal created in pipeline');
       setIsModalOpen(false);
       setTitle('');
       setClient('');
       setValue(25000);
+      setClosedBy('');
       fetchDeals();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to create deal');
@@ -99,16 +108,31 @@ export const SalesPipeline = () => {
     <div className="space-y-6">
       <PageHeader
         title="Sales Pipeline & Revenue Forecast"
-        subtitle="Track potential deal values separately from actual collected revenue"
+        subtitle="Track potential deal values, closing sales agents, and won revenue"
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            icon={Plus}
-            onClick={() => setIsModalOpen(true)}
-          >
-            Create Deal
-          </Button>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <select
+              value={filterAgent}
+              onChange={(e) => setFilterAgent(e.target.value)}
+              className="px-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium text-slate-700 dark:text-slate-200"
+            >
+              <option value="all">All Sales Agents / Owners</option>
+              {employees.map((emp) => (
+                <option key={emp._id} value={emp._id}>
+                  {emp.fullName} ({emp.designation || emp.department})
+                </option>
+              ))}
+            </select>
+
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Plus}
+              onClick={() => setIsModalOpen(true)}
+            >
+              Create Deal
+            </Button>
+          </div>
         }
       />
 
@@ -173,50 +197,69 @@ export const SalesPipeline = () => {
                 {stageDeals.length === 0 ? (
                   <p className="text-xs text-slate-400 py-8 text-center">No deals in stage</p>
                 ) : (
-                  stageDeals.map((deal) => (
-                    <div
-                      key={deal._id}
-                      className="p-3.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700 shadow-sm hover:shadow-md transition"
-                    >
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate mb-1">
-                        {deal.title}
-                      </h4>
-                      {deal.client && (
-                        <p className="text-[11px] text-slate-500 truncate mb-2">
-                          {deal.client.companyName || deal.client.name}
-                        </p>
-                      )}
+                  stageDeals.map((deal) => {
+                    const agent = deal.closedBy || deal.owner;
+                    return (
+                      <div
+                        key={deal._id}
+                        className="p-3.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700 shadow-sm hover:shadow-md transition"
+                      >
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate mb-1">
+                          {deal.title}
+                        </h4>
+                        {deal.client && (
+                          <p className="text-[11px] text-slate-500 truncate mb-2">
+                            {deal.client.companyName || deal.client.name}
+                          </p>
+                        )}
 
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-extrabold text-slate-900 dark:text-white">
-                          ${(deal.value || 0).toLocaleString()}
-                        </span>
-                        <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">
-                          {deal.probability}% Prob
-                        </span>
-                      </div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                            ${(deal.value || 0).toLocaleString()}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {deal.isDirectClosed && (
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                ⚡ Direct
+                              </span>
+                            )}
+                            <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">
+                              {deal.probability}% Prob
+                            </span>
+                          </div>
+                        </div>
 
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between text-[10px] text-slate-400">
-                        <span>Due: {new Date(deal.expectedCloseDate).toLocaleDateString()}</span>
-                        <span>{deal.owner?.fullName?.split(' ')[0] || 'User'}</span>
-                      </div>
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex flex-col gap-0.5 text-[10px] text-slate-500">
+                          <div className="flex items-center justify-between">
+                            <span>Due: {new Date(deal.expectedCloseDate).toLocaleDateString()}</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              {agent?.fullName?.split(' ')[0] || 'User'}
+                            </span>
+                          </div>
+                          {agent?.designation && (
+                            <span className="text-[9px] text-slate-400 text-right truncate">
+                              {agent.designation}
+                            </span>
+                          )}
+                        </div>
 
-                      {/* Quick stage advance buttons */}
-                      <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center gap-1">
-                        <select
-                          value={deal.stage}
-                          onChange={(e) => handleUpdateStage(deal._id, e.target.value)}
-                          className="w-full text-[10px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300"
-                        >
-                          <option value="qualification">Qualification</option>
-                          <option value="proposal_sent">Proposal Sent</option>
-                          <option value="negotiation">Negotiation</option>
-                          <option value="won">Closed Won</option>
-                          <option value="lost">Closed Lost</option>
-                        </select>
+                        {/* Quick stage advance buttons */}
+                        <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center gap-1">
+                          <select
+                            value={deal.stage}
+                            onChange={(e) => handleUpdateStage(deal._id, e.target.value)}
+                            className="w-full text-[10px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300"
+                          >
+                            <option value="qualification">Qualification</option>
+                            <option value="proposal_sent">Proposal Sent</option>
+                            <option value="negotiation">Negotiation</option>
+                            <option value="won">Closed Won</option>
+                            <option value="lost">Closed Lost</option>
+                          </select>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -309,6 +352,43 @@ export const SalesPipeline = () => {
                 {employees.map((emp) => (
                   <option key={emp._id} value={emp._id}>
                     {emp.fullName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Stage
+              </label>
+              <select
+                value={stage}
+                onChange={(e) => setStage(e.target.value)}
+                className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+              >
+                <option value="qualification">Qualification</option>
+                <option value="proposal_sent">Proposal Sent</option>
+                <option value="negotiation">Negotiation</option>
+                <option value="won">Closed Won</option>
+                <option value="lost">Closed Lost</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Closing Agent {stage === 'won' ? '*' : '(Optional)'}
+              </label>
+              <select
+                value={closedBy}
+                onChange={(e) => setClosedBy(e.target.value)}
+                className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white"
+              >
+                <option value="">Default to Owner</option>
+                {employees.map((emp) => (
+                  <option key={emp._id} value={emp._id}>
+                    {emp.fullName} ({emp.designation || emp.department})
                   </option>
                 ))}
               </select>

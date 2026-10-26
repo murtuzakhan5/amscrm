@@ -46,6 +46,36 @@ const clientSchema = new Schema(
       default: null,
       index: true,
     },
+    closedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'Employee',
+      default: null,
+      index: true,
+    },
+    dealValue: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    actualRevenue: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['unpaid', 'partially_paid', 'fully_paid'],
+      default: 'fully_paid',
+    },
+    isDirectClosed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    closedAt: {
+      type: Date,
+      default: null,
+    },
     convertedFromLead: {
       type: Schema.Types.ObjectId,
       ref: 'Lead',
