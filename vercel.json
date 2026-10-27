@@ -18,9 +18,28 @@
       }
     },
     {
-      "source": "/(.*)",
+      "source": "/api",
+      "destination": {
+        "service": "server"
+      }
+    },
+    {
+      "source": "/assets/(.*)",
       "destination": {
         "service": "client"
+      }
+    },
+    {
+      "source": "/(.*\\.(?:js|css|svg|png|jpg|jpeg|gif|ico|json|woff|woff2|ttf|eot|webp))",
+      "destination": {
+        "service": "client"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "client",
+        "path": "/index.html"
       }
     }
   ]
