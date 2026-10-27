@@ -3,7 +3,16 @@
   "services": {
     "client": {
       "root": "client",
-      "framework": "vite"
+      "framework": "vite",
+      "routes": [
+        {
+          "handle": "filesystem"
+        },
+        {
+          "src": "/.*",
+          "dest": "/index.html"
+        }
+      ]
     },
     "server": {
       "root": "server",
@@ -24,29 +33,15 @@
       }
     },
     {
-      "source": "/assets/:path*",
-      "destination": {
-        "service": "client"
-      }
-    },
-    {
-      "source": "/:file.:ext",
-      "destination": {
-        "service": "client"
-      }
-    },
-    {
       "source": "/:path*",
       "destination": {
-        "service": "client",
-        "path": "/index.html"
+        "service": "client"
       }
     },
     {
       "source": "/",
       "destination": {
-        "service": "client",
-        "path": "/index.html"
+        "service": "client"
       }
     }
   ]
