@@ -12,7 +12,7 @@
   },
   "rewrites": [
     {
-      "source": "/api/(.*)",
+      "source": "/api/:path*",
       "destination": {
         "service": "server"
       }
@@ -24,19 +24,26 @@
       }
     },
     {
-      "source": "/assets/(.*)",
+      "source": "/assets/:path*",
       "destination": {
         "service": "client"
       }
     },
     {
-      "source": "/(.*\\.(?:js|css|svg|png|jpg|jpeg|gif|ico|json|woff|woff2|ttf|eot|webp))",
+      "source": "/:file.:ext",
       "destination": {
         "service": "client"
       }
     },
     {
-      "source": "/(.*)",
+      "source": "/:path*",
+      "destination": {
+        "service": "client",
+        "path": "/index.html"
+      }
+    },
+    {
+      "source": "/",
       "destination": {
         "service": "client",
         "path": "/index.html"
